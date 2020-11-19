@@ -3,6 +3,11 @@ from torch.utils.data import Dataset
 from imresize import imresize
 from util import read_image, create_gradient_map, im2tensor, create_probability_map, nn_interpolation
 
+from collections import namedtuple
+
+
+FaceBoundaries = namedtuple('FaceBoundaries', 'left top right bottom'.split())
+
 
 class DataGenerator(Dataset):
     """
@@ -46,15 +51,42 @@ class DataGenerator(Dataset):
 
     def make_list_of_crop_indices(self, conf):
         iterations = conf.max_iters
-        prob_map_big, prob_map_sml = self.create_prob_maps(scale_factor=conf.scale_factor)
+        prob_map_big, prob_map_sml = self.create_prob_maps(
+            scale_factor=conf.scale_factor,
+            face_boundaries=conf.face_boundaries)
         crop_indices_for_g = np.random.choice(a=len(prob_map_sml), size=iterations, p=prob_map_sml)
         crop_indices_for_d = np.random.choice(a=len(prob_map_big), size=iterations, p=prob_map_big)
         return crop_indices_for_g, crop_indices_for_d
 
-    def create_prob_maps(self, scale_factor):
+    @staticmethod
+    def zerioze_face(map, face_boundaries):
+        left, top, right, bottom = face_boundaries.left, face_boundaries.top, \
+                                   face_boundaries.right, face_boundaries.bottom
+        map[left:right, bottom:top, ...] = 0
+        return map
+
+    @staticmethod
+    def calc_face_boundaries_after_resize(face_boundaries, scale_factor):
+        inverse_scale_factor = int(1.0 / scale_factor)
+        return FaceBoundaries(left=face_boundaries.left // inverse_scale_factor,
+                              top=face_boundaries.top // inverse_scale_factor,
+                              right=face_boundaries.right //
+                                   inverse_scale_factor,
+                              bottom=face_boundaries.bottom //
+                                    inverse_scale_factor)
+
+    def create_prob_maps(self, scale_factor, face_boundaries):
         # Create loss maps for input image and downscaled one
         loss_map_big = create_gradient_map(self.input_image)
         loss_map_sml = create_gradient_map(imresize(im=self.input_image, scale_factor=scale_factor, kernel='cubic'))
+
+        # loss_map_big = self.zerioze_face(loss_map_big, face_boundaries)
+        # face_boundaries_for_small_image = \
+        #     self.calc_face_boundaries_after_resize(face_boundaries,
+        #                                            scale_factor)
+        # loss_map_sml = self.zerioze_face(loss_map_sml,
+        #                                  face_boundaries_for_small_image)
+
         # Create corresponding probability maps
         prob_map_big = create_probability_map(loss_map_big, self.d_input_shape)
         prob_map_sml = create_probability_map(nn_interpolation(loss_map_sml, int(1 / scale_factor)), self.g_input_shape)

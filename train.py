@@ -1,8 +1,9 @@
 import os
 import tqdm
+import face_recognition
 
 from configs import Config
-from data import DataGenerator
+from data import DataGenerator, FaceBoundaries
 from kernelGAN import KernelGAN
 from learner import Learner
 
@@ -33,6 +34,17 @@ def main():
     # Run the KernelGAN sequentially on all images in the input directory
     for filename in os.listdir(os.path.abspath(args.input_dir)):
         conf = Config().parse(create_params(filename, args))
+        #######################################################################
+        ##################### ADD FACE BOUNDARIES TO CONF #####################
+        #######################################################################
+
+        image = face_recognition.load_image_file(os.path.join(args.input_dir,
+                                                              filename))
+        face_bounding_box = face_recognition.face_locations(image)[0]
+        conf.face_boundaries = FaceBoundaries(left=face_bounding_box[0],
+                                              top=face_bounding_box[1],
+                                              right=face_bounding_box[2],
+                                              bottom=face_bounding_box[3])
         train(conf)
     prog.exit(0)
 
